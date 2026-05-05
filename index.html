@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Id Muzix</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
   <link rel="preconnect" href="https://cf-media.sndcdn.com" />
@@ -28,8 +29,23 @@
 
   <!-- History -->
   <div id="historySection" style="display:none">
-    <div class="history-label">Pencarian terakhir</div>
+    <div class="section-label">Pencarian terakhir</div>
     <div class="history-chips" id="historyChips"></div>
+  </div>
+
+  <!-- Trending -->
+  <div id="trendingSection" style="display:none">
+    <div class="section-label">🔥 Trending Indonesia</div>
+    <div class="trending-grid" id="trendingGrid"></div>
+  </div>
+
+  <!-- Skeleton loader -->
+  <div id="skeletonLoader" style="display:none">
+    <div class="skeleton-thumb"></div>
+    <div class="skeleton-line w80"></div>
+    <div class="skeleton-line w50"></div>
+    <div class="skeleton-line w100 h8"></div>
+    <div class="skeleton-line w100 h44"></div>
   </div>
 
   <!-- Error state -->
@@ -51,7 +67,10 @@
 
     <div class="card-info">
       <div class="card-title" id="cardTitle">—</div>
-      <div class="card-meta" id="cardMeta">—</div>
+      <div class="card-meta-row">
+        <span class="card-meta" id="cardMeta">—</span>
+        <span class="source-badge" id="sourceBadge"></span>
+      </div>
     </div>
 
     <div class="player">
