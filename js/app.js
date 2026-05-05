@@ -1,5 +1,5 @@
 // ─── Config ──────────────────────────────────────────────────────────────────
-const BACKEND = 'https://xkhfnxgmsffn.ap-southeast-1.clawcloudrun.com';
+const BACKEND = 'https://owqcznklvwrw.ap-southeast-1.clawcloudrun.com';
 
 // ─── DOM Refs ─────────────────────────────────────────────────────────────────
 const audio         = document.getElementById('audioEl');
