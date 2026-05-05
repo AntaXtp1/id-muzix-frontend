@@ -1,43 +1,48 @@
-// ─── Config ──────────────────────────────────────────────────────────────────
+// ─── Config ───────────────────────────────────────────────────────────────────
 const BACKEND = 'https://owqcznklvwrw.ap-southeast-1.clawcloudrun.com';
 
-// ─── DOM Refs ─────────────────────────────────────────────────────────────────
-const audio         = document.getElementById('audioEl');
-const searchInput   = document.getElementById('searchInput');
-const searchBtn     = document.getElementById('searchBtn');
-const resultCard    = document.getElementById('resultCard');
-const errorMsg      = document.getElementById('errorMsg');
-const cardTitle     = document.getElementById('cardTitle');
-const cardMeta      = document.getElementById('cardMeta');
-const thumbWrap     = document.getElementById('thumbWrap');
-const playBtn       = document.getElementById('playBtn');
-const progressFill  = document.getElementById('progressFill');
-const progressBar   = document.getElementById('progressBar');
-const timeCurrent   = document.getElementById('timeCurrent');
-const timeDuration  = document.getElementById('timeDuration');
-const downloadBtn   = document.getElementById('downloadBtn');
-const muteBtn       = document.getElementById('muteBtn');
-const loopBtn       = document.getElementById('loopBtn');
-const nowPlayingBar = document.getElementById('nowPlayingBar');
-const npThumb       = document.getElementById('npThumb');
-const npTitle       = document.getElementById('npTitle');
-const npPlayBtn     = document.getElementById('npPlayBtn');
-const historySection= document.getElementById('historySection');
-const historyChips  = document.getElementById('historyChips');
+// ─── DOM ──────────────────────────────────────────────────────────────────────
+const audio          = document.getElementById('audioEl');
+const searchInput    = document.getElementById('searchInput');
+const searchBtn      = document.getElementById('searchBtn');
+const resultCard     = document.getElementById('resultCard');
+const errorMsg       = document.getElementById('errorMsg');
+const cardTitle      = document.getElementById('cardTitle');
+const cardMeta       = document.getElementById('cardMeta');
+const thumbWrap      = document.getElementById('thumbWrap');
+const playBtn        = document.getElementById('playBtn');
+const progressFill   = document.getElementById('progressFill');
+const progressBar    = document.getElementById('progressBar');
+const timeCurrent    = document.getElementById('timeCurrent');
+const timeDuration   = document.getElementById('timeDuration');
+const downloadBtn    = document.getElementById('downloadBtn');
+const muteBtn        = document.getElementById('muteBtn');
+const loopBtn        = document.getElementById('loopBtn');
+const nowPlayingBar  = document.getElementById('nowPlayingBar');
+const npThumb        = document.getElementById('npThumb');
+const npTitle        = document.getElementById('npTitle');
+const npPlayBtn      = document.getElementById('npPlayBtn');
+const historySection = document.getElementById('historySection');
+const historyChips   = document.getElementById('historyChips');
+const trendingSection= document.getElementById('trendingSection');
+const trendingGrid   = document.getElementById('trendingGrid');
+const skeletonEl     = document.getElementById('skeletonLoader');
+const sourceBadge    = document.getElementById('sourceBadge');
 
 // ─── State ────────────────────────────────────────────────────────────────────
-let currentToken   = null;
-let currentThumb   = '';
-let currentTitle   = '';
-let isLooping      = false;
-let isMuted        = false;
-let retryCount     = 0;
-const MAX_RETRY    = 3;
-let searchController = null; // AbortController buat cancel request lama
+let currentToken  = null;
+let currentThumb  = '';
+let currentTitle  = '';
+let isLooping     = false;
+let isMuted       = false;
+let retryCount    = 0;
+let shouldAutoPlay= false;
+const MAX_RETRY   = 3;
+let searchController = null;
 let debounceTimer    = null;
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
-function showToast(msg) {
+function showToast(msg, type = 'error') {
   let toast = document.getElementById('toastEl');
   if (!toast) {
     toast = document.createElement('div');
@@ -46,11 +51,17 @@ function showToast(msg) {
     document.body.appendChild(toast);
   }
   toast.textContent = msg;
+  toast.style.background = type === 'error' ? '#ff4444' : '#333';
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
-// ─── History ─────────────────────────────────────────────────────────────────
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
+function showSkeleton(on) {
+  if (skeletonEl) skeletonEl.style.display = on ? 'block' : 'none';
+}
+
+// ─── History ──────────────────────────────────────────────────────────────────
 function getHistory() {
   try { return JSON.parse(localStorage.getItem('muzix_history') || '[]'); }
   catch { return []; }
@@ -66,10 +77,29 @@ function renderHistory() {
   if (!h.length) { historySection.style.display = 'none'; return; }
   historySection.style.display = 'block';
   historyChips.innerHTML = h.map(q =>
-    `<div class="chip" onclick="doSearch('${q.replace(/'/g, "\\'")}')">🎵 ${q}</div>`
+    `<div class="chip" onclick="doSearch('${q.replace(/'/g,"\\'")}')">🕐 ${q}</div>`
   ).join('');
 }
 renderHistory();
+
+// ─── Trending ─────────────────────────────────────────────────────────────────
+async function loadTrending() {
+  try {
+    const res  = await fetch(`${BACKEND}/trending`);
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length) return;
+    trendingSection.style.display = 'block';
+    trendingGrid.innerHTML = data.map((item, i) =>
+      `<div class="trending-item" onclick="doSearch('${item.query.replace(/'/g,"\\'")}')">
+        <span class="trending-num">${String(i+1).padStart(2,'0')}</span>
+        <span class="trending-title">${item.title}</span>
+      </div>`
+    ).join('');
+  } catch (e) {
+    console.warn('[Trending] gagal load:', e.message);
+  }
+}
+loadTrending();
 
 // ─── Search ───────────────────────────────────────────────────────────────────
 function setSearchLoading(on) {
@@ -87,26 +117,30 @@ async function doSearch(q) {
   if (!q) return;
   searchInput.value = q;
 
-  // Cancel request sebelumnya kalau masih jalan
   if (searchController) searchController.abort();
   searchController = new AbortController();
 
   setSearchLoading(true);
+  showSkeleton(true);
   resultCard.classList.remove('show');
   errorMsg.classList.remove('show');
+  trendingSection.style.display = 'none';
+  historySection.style.display = 'none';
+
+  // Stop audio dulu, bersih
   audio.pause();
   audio.src = '';
   playBtn.disabled = true;
   retryCount = 0;
+  shouldAutoPlay = true;
 
   try {
-    const res = await fetch(`${BACKEND}/search?q=${encodeURIComponent(q)}`, {
+    const res  = await fetch(`${BACKEND}/search?q=${encodeURIComponent(q)}`, {
       signal: searchController.signal
     });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || 'Gagal fetch');
 
-    // Set data ke UI
     currentToken = data.stream_token;
     currentThumb = data.thumbnail || '';
     currentTitle = data.title;
@@ -120,38 +154,58 @@ async function doSearch(q) {
     npThumb.src           = currentThumb;
     npTitle.textContent   = currentTitle;
 
-    // ── Hybrid streaming: minta URL dari backend, audio langsung ke CDN ──
-    await loadStreamUrl();
+    // Source badge
+    if (sourceBadge) {
+      sourceBadge.textContent = data.source === 'youtube' ? '▶ YouTube' : '☁ SoundCloud';
+      sourceBadge.className   = `source-badge ${data.source}`;
+    }
 
     downloadBtn.href     = `${BACKEND}/download/${currentToken}`;
     downloadBtn.download = `${currentTitle}.mp3`;
 
+    showSkeleton(false);
     resultCard.classList.add('show');
     addHistory(q);
     setupMediaSession();
 
+    // Load stream URL
+    await loadStreamUrl();
+
   } catch (err) {
-    if (err.name === 'AbortError') return; // dibatalin sendiri, skip
+    if (err.name === 'AbortError') return;
     console.error('[Search]', err);
+    showSkeleton(false);
     errorMsg.classList.add('show');
+    renderHistory();
+    trendingSection.style.display = 'block';
   }
 
   setSearchLoading(false);
 }
 
-// ── Hybrid: ambil signed URL dari backend, set ke audio langsung ──────────────
+// ─── Load stream URL dari backend (hybrid) ────────────────────────────────────
 async function loadStreamUrl() {
   const res  = await fetch(`${BACKEND}/get-stream-url/${currentToken}`);
   const data = await res.json();
   if (!data.url) throw new Error('Stream URL kosong');
 
   audio.src = data.url;
-  audio.load();
   playBtn.disabled = false;
+
+  // Auto-play: coba play setelah src di-set
+  // Wrapped catch biar AbortError gak bikin noise di console
+  if (shouldAutoPlay) {
+    shouldAutoPlay = false;
+    audio.play().catch(err => {
+      if (err.name !== 'AbortError') {
+        console.warn('[AutoPlay]', err.message);
+      }
+    });
+  }
 }
 
-// ── Retry handler kalau URL expired di tengah jalan ──────────────────────────
-audio.onerror = async () => {
+// ─── audio.onerror — retry max 3x ────────────────────────────────────────────
+audio.addEventListener('error', async () => {
   if (!currentToken) return;
   if (retryCount >= MAX_RETRY) {
     showToast('Stream gagal, coba cari ulang 😞');
@@ -160,30 +214,36 @@ audio.onerror = async () => {
   retryCount++;
   console.warn(`[Audio] error, retry ${retryCount}/${MAX_RETRY}`);
   try {
+    shouldAutoPlay = true;
     await loadStreamUrl();
-    audio.play();
   } catch {
     showToast('Gagal reconnect stream');
   }
-};
+});
 
-// ─── Player Controls ─────────────────────────────────────────────────────────
+// ─── Player Controls ──────────────────────────────────────────────────────────
+function safePlay() {
+  audio.play().catch(err => {
+    if (err.name !== 'AbortError') console.warn('[Play]', err.message);
+  });
+}
+
 function togglePlay() {
-  if (audio.paused) audio.play();
+  if (audio.paused) safePlay();
   else audio.pause();
 }
 
 function setPlayIcons(playing) {
-  const pauseSVG = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
-  const playSVG  = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-  playBtn.innerHTML   = playing ? pauseSVG : playSVG;
-  npPlayBtn.innerHTML = playing ? pauseSVG : playSVG;
+  const pause = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+  const play  = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+  playBtn.innerHTML   = playing ? pause : play;
+  npPlayBtn.innerHTML = playing ? pause : play;
 }
 
 audio.addEventListener('play', () => {
   setPlayIcons(true);
   nowPlayingBar.classList.add('show');
-  retryCount = 0; // reset retry kalau berhasil main
+  retryCount = 0;
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
 });
 
@@ -195,21 +255,17 @@ audio.addEventListener('pause', () => {
 audio.addEventListener('timeupdate', () => {
   if (!audio.duration || isNaN(audio.duration)) return;
   const pct = (audio.currentTime / audio.duration) * 100;
-  progressFill.style.width = pct + '%';
-  timeCurrent.textContent  = formatTime(audio.currentTime);
-  timeDuration.textContent = formatTime(audio.duration);
+  progressFill.style.width      = pct + '%';
+  timeCurrent.textContent        = formatTime(audio.currentTime);
+  timeDuration.textContent       = formatTime(audio.duration);
 });
 
 audio.addEventListener('ended', () => {
-  if (isLooping) { audio.currentTime = 0; audio.play(); }
-  else setPlayIcons(false);
+  setPlayIcons(false);
+  if (isLooping) { audio.currentTime = 0; safePlay(); }
 });
 
-// ── Cleanup safety: remove event sebelum navigasi ────────────────────────────
-window.addEventListener('beforeunload', () => {
-  audio.pause();
-  audio.src = '';
-});
+window.addEventListener('beforeunload', () => { audio.pause(); audio.src = ''; });
 
 // ─── Seekbar — mouse + touch ──────────────────────────────────────────────────
 function seekTo(clientX) {
@@ -218,15 +274,9 @@ function seekTo(clientX) {
   const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
   audio.currentTime = pct * audio.duration;
 }
-
-progressBar.addEventListener('click', (e) => seekTo(e.clientX));
-
-// Touch support buat mobile
-progressBar.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-progressBar.addEventListener('touchmove',  (e) => {
-  e.preventDefault();
-  seekTo(e.touches[0].clientX);
-}, { passive: false });
+progressBar.addEventListener('click', e => seekTo(e.clientX));
+progressBar.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+progressBar.addEventListener('touchmove', e => { e.preventDefault(); seekTo(e.touches[0].clientX); }, { passive: false });
 
 // ─── Mute & Loop ─────────────────────────────────────────────────────────────
 muteBtn.addEventListener('click', () => {
@@ -234,7 +284,6 @@ muteBtn.addEventListener('click', () => {
   audio.muted = isMuted;
   muteBtn.classList.toggle('active', isMuted);
 });
-
 loopBtn.addEventListener('click', () => {
   isLooping = !isLooping;
   audio.loop = isLooping;
@@ -244,43 +293,34 @@ loopBtn.addEventListener('click', () => {
 playBtn.addEventListener('click', togglePlay);
 npPlayBtn.addEventListener('click', togglePlay);
 
-// ─── Search events — debounce 400ms ──────────────────────────────────────────
+// ─── Search events ────────────────────────────────────────────────────────────
 searchBtn.addEventListener('click', () => doSearch());
-searchInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    clearTimeout(debounceTimer);
-    doSearch();
-  }
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { clearTimeout(debounceTimer); doSearch(); }
 });
-// Optional: debounce auto search waktu ngetik
 searchInput.addEventListener('input', () => {
   clearTimeout(debounceTimer);
   const q = searchInput.value.trim();
-  if (q.length < 3) return; // minimal 3 karakter dulu
+  if (q.length < 3) return;
   debounceTimer = setTimeout(() => doSearch(q), 400);
 });
 
-// ─── MediaSession API (lock screen control) ───────────────────────────────────
+// ─── MediaSession ─────────────────────────────────────────────────────────────
 function setupMediaSession() {
   if (!('mediaSession' in navigator)) return;
   navigator.mediaSession.metadata = new MediaMetadata({
     title: currentTitle,
-    artwork: currentThumb
-      ? [{ src: currentThumb, sizes: '600x600', type: 'image/jpeg' }]
-      : []
+    artwork: currentThumb ? [{ src: currentThumb, sizes: '600x600', type: 'image/jpeg' }] : []
   });
-  navigator.mediaSession.setActionHandler('play',  () => audio.play());
+  navigator.mediaSession.setActionHandler('play',  () => safePlay());
   navigator.mediaSession.setActionHandler('pause', () => audio.pause());
 }
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
 function formatTime(s) {
   if (isNaN(s) || s < 0) return '0:00';
-  const m   = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, '0')}`;
+  return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 }
 function formatDuration(ms) {
-  if (!ms) return '';
-  return formatTime(Math.floor(ms / 1000));
+  return ms ? formatTime(Math.floor(ms / 1000)) : '';
 }
