@@ -178,17 +178,33 @@ function renderHistory() {
 renderHistory();
 
 // ─── Trending ──────────────────────────────────────────────────────────────────
+// PATCH 1 — loadTrending()
+
 async function loadTrending() {
   if (trendSkeleton) trendSkeleton.style.display = 'grid';
-  try {
-    const res  = await fetch(`${BACKEND}/trending`);
-    const data = await res.json();
-    if (!Array.isArray(data) || !data.length) throw new Error('empty');
 
-    if (trendSkeleton) trendSkeleton.style.display = 'none';
+  try {
+
+    const res = await fetch(`${BACKEND}/trending`);
+
+    // FIX
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    if (!Array.isArray(data) || !data.length) {
+      throw new Error('empty');
+    }
+
+    if (trendSkeleton) {
+      trendSkeleton.style.display = 'none';
+    }
 
     // Top 3 → hero cards
     const heroes = data.slice(0, 3);
+
     trendingHeroes.innerHTML = heroes.map(item => `
       <div class="trend-hero" data-query="${item.query.replace(/"/g,'&quot;')}">
         ${item.thumbnail
@@ -203,20 +219,25 @@ async function loadTrending() {
       </div>
     `).join('');
 
-    // Bind click
     trendingHeroes.querySelectorAll('.trend-hero').forEach(el => {
-      el.addEventListener('click', () => { doSearch(el.dataset.query); showView('search'); });
+      el.addEventListener('click', () => {
+        doSearch(el.dataset.query);
+        showView('search');
+      });
     });
 
     // 4-20 → list
     const rest = data.slice(3);
+
     trendingList.innerHTML = rest.map((item, i) => `
       <div class="trending-row" data-query="${item.query.replace(/"/g,'&quot;')}" style="animation-delay:${i*0.04}s">
         <div class="tr-rank">${item.rank || (i+4)}</div>
+
         ${item.thumbnail
           ? `<img class="tr-thumb" src="${item.thumbnail}" alt="" loading="lazy">`
           : `<div class="tr-thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13M9 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm12 0c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z"/></svg></div>`
         }
+
         <div class="tr-info">
           <div class="tr-title">${item.title}</div>
           <div class="tr-artist">${item.artist || ''}</div>
@@ -225,54 +246,61 @@ async function loadTrending() {
     `).join('');
 
     trendingList.querySelectorAll('.trending-row').forEach(el => {
-      el.addEventListener('click', () => { doSearch(el.dataset.query); showView('search'); });
+      el.addEventListener('click', () => {
+        doSearch(el.dataset.query);
+        showView('search');
+      });
     });
 
   } catch(e) {
+
     console.warn('[Trending] gagal:', e.message);
-    if (trendSkeleton) trendSkeleton.style.display = 'none';
+
+    if (trendSkeleton) {
+      trendSkeleton.style.display = 'none';
+    }
   }
 }
-loadTrending();
 
 // ─── Preload next song ─────────────────────────────────────────────────────────
-async function preloadNextSong() {
-  if (!relatedQueue.length || isPreloading) return;
+// PATCH 2 — loadStreamUrl()
 
-  const next = relatedQueue[0];
-  if (preloadedQuery === next.query) return; // udah di-preload
+async function loadStreamUrl() {
 
-  isPreloading = true;
-  try {
-    const res  = await fetch(`${BACKEND}/search?q=${encodeURIComponent(next.query)}`);
-    const data = await res.json();
-    if (data.stream_token) {
-      const streamRes = await fetch(`${BACKEND}/get-stream-url/${data.stream_token}`);
-      const streamData = await streamRes.json();
-      if (streamData.url) {
-        preloadAudio.src = streamData.url;
-        preloadAudio.load();
-        preloadedQuery = next.query;
-        preloadedUrl   = streamData.url;
-        console.log('[Preload] ✓', next.title);
+  const res = await fetch(
+    `${BACKEND}/get-stream-url/${currentToken}`
+  );
+
+  const data = await res.json();
+
+  // FIX parser fleksibel
+  const streamUrl =
+    data.url ||
+    data.audio ||
+    data.stream_url ||
+    "";
+
+  if (!streamUrl) {
+    throw new Error('Stream URL kosong');
+  }
+
+  audio.src = streamUrl;
+
+  playBtn.disabled = false;
+
+  if (shouldAutoPlay) {
+
+    shouldAutoPlay = false;
+
+    audio.play().catch(e => {
+
+      if (e.name !== 'AbortError') {
+        console.warn('[AutoPlay]', e.message);
       }
-    }
-  } catch(e) {
-    console.warn('[Preload] gagal:', e.message);
-  }
-  isPreloading = false;
-}
 
-// Check progress untuk trigger preload
-function checkPreloadTrigger() {
-  if (!audio.duration || isNaN(audio.duration)) return;
-  const remaining = audio.duration - audio.currentTime;
-  // Trigger preload kalau sisa 25 detik
-  if (remaining < 25 && remaining > 0 && relatedQueue.length && !preloadedQuery) {
-    preloadNextSong();
+    });
   }
 }
-
 // ─── Auto-next / shuffle by related ───────────────────────────────────────────
 async function loadRelated(query, artist) {
   try {
