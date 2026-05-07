@@ -58,25 +58,22 @@ let shouldAutoPlay= false;
 const MAX_RETRY   = 3;
 let searchController = null;
 let debounceTimer    = null;
-let relatedQueue     = [];   // queue lagu related untuk auto-next
-let preloadedQuery   = null; // query yang udah di-preload
-let preloadedUrl     = null; // URL yang udah di-preload
+let relatedQueue     = [];
+let preloadedQuery   = null;
+let preloadedUrl     = null;
 let isPreloading     = false;
-let preloadTimer     = null;
 
 // ─── NoSleep / Anti-throttle ───────────────────────────────────────────────────
-// Trick: silent AudioContext yang terus "hidup" biar browser gak throttle tab
-let audioCtx = null;
+let audioCtx   = null;
 let silentNode = null;
 
 function initNoSleep() {
   if (audioCtx) return;
   try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // Buat oscillator silent (volume 0) - bikin browser anggap tab ini aktif audio
     silentNode = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
-    gainNode.gain.value = 0.001; // nearly silent, bukan 0 biar gak di-optimize away
+    gainNode.gain.value = 0.001;
     silentNode.connect(gainNode);
     gainNode.connect(audioCtx.destination);
     silentNode.start();
@@ -85,22 +82,17 @@ function initNoSleep() {
   }
 }
 
-// Wake Lock API sebagai layer kedua anti-throttle
 let wakeLock = null;
 async function requestWakeLock() {
   if (!('wakeLock' in navigator)) return;
   try {
     wakeLock = await navigator.wakeLock.request('screen');
-    console.log('[WakeLock] aktif');
-    wakeLock.addEventListener('release', () => {
-      console.log('[WakeLock] released');
-    });
+    wakeLock.addEventListener('release', () => console.log('[WakeLock] released'));
   } catch(e) {
     console.warn('[WakeLock] gagal:', e.message);
   }
 }
 
-// Re-request wake lock kalau tab visible lagi
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && !audio.paused) {
     await requestWakeLock();
@@ -123,10 +115,10 @@ function toggleSidebar() {
 // ─── Greeting ─────────────────────────────────────────────────────────────────
 function setGreeting() {
   const h = new Date().getHours();
-  if (h < 11)       greetingTime.textContent = 'Pagi';
-  else if (h < 15)  greetingTime.textContent = 'Siang';
-  else if (h < 18)  greetingTime.textContent = 'Sore';
-  else              greetingTime.textContent = 'Malam';
+  if (h < 11)      greetingTime.textContent = 'Pagi';
+  else if (h < 15) greetingTime.textContent = 'Siang';
+  else if (h < 18) greetingTime.textContent = 'Sore';
+  else             greetingTime.textContent = 'Malam';
 }
 setGreeting();
 
@@ -151,7 +143,6 @@ function addHistory(q) {
 }
 function renderHistory() {
   const h = getHistory();
-  // Search view chips
   if (historySection && historyChips) {
     if (!h.length) {
       historySection.style.display = 'none';
@@ -165,7 +156,6 @@ function renderHistory() {
       });
     }
   }
-  // Sidebar
   if (sidebarHistory) {
     sidebarHistory.innerHTML = h.slice(0, 6).map(q =>
       `<div class="sidebar-hist-item" data-query="${q.replace(/"/g,'&quot;')}">${q}</div>`
@@ -177,134 +167,144 @@ function renderHistory() {
 }
 renderHistory();
 
-// ─── Trending ──────────────────────────────────────────────────────────────────
-// PATCH 1 — loadTrending()
-
+// ─── Trending ─────────────────────────────────────────────────────────────────
 async function loadTrending() {
   if (trendSkeleton) trendSkeleton.style.display = 'grid';
 
   try {
-
     const res = await fetch(`${BACKEND}/trending`);
-
-    // FIX
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const data = await res.json();
+    if (!Array.isArray(data) || !data.length) throw new Error('empty');
 
-    if (!Array.isArray(data) || !data.length) {
-      throw new Error('empty');
-    }
-
-    if (trendSkeleton) {
-      trendSkeleton.style.display = 'none';
-    }
+    if (trendSkeleton) trendSkeleton.style.display = 'none';
 
     // Top 3 → hero cards
     const heroes = data.slice(0, 3);
-
-    trendingHeroes.innerHTML = heroes.map(item => `
+    trendingHeroes.innerHTML = heroes.map((item, idx) => `
       <div class="trend-hero" data-query="${item.query.replace(/"/g,'&quot;')}">
         ${item.thumbnail
-          ? `<img class="trend-hero-img" src="${item.thumbnail}" alt="${item.title}" loading="lazy">`
-          : `<div class="trend-hero-img-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13M9 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm12 0c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z"/></svg></div>`
+          ? `<img class="trend-hero-img" src="${item.thumbnail}" alt="${escapeHtml(item.title)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+          : ''
         }
+        <div class="trend-hero-img-placeholder" style="${item.thumbnail ? 'display:none' : ''}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M9 18V5l12-2v13M9 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm12 0c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z"/>
+          </svg>
+        </div>
         <div class="trend-hero-body">
-          <div class="trend-hero-rank">#${item.rank || (heroes.indexOf(item)+1)}</div>
-          <div class="trend-hero-title">${item.title}</div>
-          <div class="trend-hero-artist">${item.artist || ''}</div>
+          <div class="trend-hero-rank">#${item.rank || (idx + 1)}</div>
+          <div class="trend-hero-title">${escapeHtml(item.title)}</div>
+          <div class="trend-hero-artist">${escapeHtml(item.artist || '')}</div>
         </div>
       </div>
     `).join('');
 
     trendingHeroes.querySelectorAll('.trend-hero').forEach(el => {
-      el.addEventListener('click', () => {
-        doSearch(el.dataset.query);
-        showView('search');
-      });
+      el.addEventListener('click', () => { doSearch(el.dataset.query); showView('search'); });
     });
 
     // 4-20 → list
     const rest = data.slice(3);
-
     trendingList.innerHTML = rest.map((item, i) => `
       <div class="trending-row" data-query="${item.query.replace(/"/g,'&quot;')}" style="animation-delay:${i*0.04}s">
-        <div class="tr-rank">${item.rank || (i+4)}</div>
-
+        <div class="tr-rank">${item.rank || (i + 4)}</div>
         ${item.thumbnail
-          ? `<img class="tr-thumb" src="${item.thumbnail}" alt="" loading="lazy">`
+          ? `<img class="tr-thumb" src="${item.thumbnail}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'tr-thumb-placeholder\\'><svg viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M9 18V5l12-2v13M9 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm12 0c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z\\'/></svg></div>'">`
           : `<div class="tr-thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13M9 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm12 0c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z"/></svg></div>`
         }
-
         <div class="tr-info">
-          <div class="tr-title">${item.title}</div>
-          <div class="tr-artist">${item.artist || ''}</div>
+          <div class="tr-title">${escapeHtml(item.title)}</div>
+          <div class="tr-artist">${escapeHtml(item.artist || '')}</div>
         </div>
       </div>
     `).join('');
 
     trendingList.querySelectorAll('.trending-row').forEach(el => {
-      el.addEventListener('click', () => {
-        doSearch(el.dataset.query);
-        showView('search');
-      });
+      el.addEventListener('click', () => { doSearch(el.dataset.query); showView('search'); });
     });
 
   } catch(e) {
-
     console.warn('[Trending] gagal:', e.message);
-
-    if (trendSkeleton) {
-      trendSkeleton.style.display = 'none';
+    if (trendSkeleton) trendSkeleton.style.display = 'none';
+    // Tampilkan pesan error ringan di trending section
+    if (trendingHeroes) {
+      trendingHeroes.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:24px;color:var(--muted);font-size:13px">Gagal memuat trending, coba refresh 🔄</div>`;
     }
   }
 }
 
+// ─── Escape HTML helper ────────────────────────────────────────────────────────
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 // ─── Preload next song ─────────────────────────────────────────────────────────
-// PATCH 2 — loadStreamUrl()
-
 async function loadStreamUrl() {
-
-  const res = await fetch(
-    `${BACKEND}/get-stream-url/${currentToken}`
-  );
+  const res  = await fetch(`${BACKEND}/get-stream-url/${currentToken}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
   const data = await res.json();
-
-  // FIX parser fleksibel
-  const streamUrl =
-    data.url ||
-    data.audio ||
-    data.stream_url ||
-    "";
-
-  if (!streamUrl) {
-    throw new Error('Stream URL kosong');
-  }
+  // Fleksibel: cek berbagai field yang mungkin dikembalikan
+  const streamUrl = data.url || data.audio || data.stream_url || '';
+  if (!streamUrl) throw new Error('Stream URL kosong');
 
   audio.src = streamUrl;
-
   playBtn.disabled = false;
 
   if (shouldAutoPlay) {
-
     shouldAutoPlay = false;
-
     audio.play().catch(e => {
-
-      if (e.name !== 'AbortError') {
-        console.warn('[AutoPlay]', e.message);
-      }
-
+      if (e.name !== 'AbortError') console.warn('[AutoPlay]', e.message);
     });
   }
 }
+
+// ─── checkPreloadTrigger — preload lagu berikutnya saat 75% berjalan ──────────
+async function checkPreloadTrigger() {
+  if (!audio.duration || isNaN(audio.duration)) return;
+  if (isPreloading || preloadedUrl) return;
+  if (!relatedQueue.length) return;
+
+  const pct = audio.currentTime / audio.duration;
+  if (pct < 0.75) return; // mulai preload di 75%
+
+  isPreloading = true;
+  const nextItem = relatedQueue[0];
+
+  try {
+    const res  = await fetch(`${BACKEND}/search?q=${encodeURIComponent(nextItem.query)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    if (data.stream_token && !data.error) {
+      const streamRes  = await fetch(`${BACKEND}/get-stream-url/${data.stream_token}`);
+      const streamData = await streamRes.json();
+      const url        = streamData.url || streamData.audio || '';
+
+      if (url) {
+        preloadAudio.src = url;
+        preloadedQuery   = nextItem.query;
+        preloadedUrl     = url;
+        console.log('[Preload] ✓ berhasil preload:', nextItem.query);
+      }
+    }
+  } catch(e) {
+    console.warn('[Preload] gagal:', e.message);
+  } finally {
+    isPreloading = false;
+  }
+}
+
 // ─── Auto-next / shuffle by related ───────────────────────────────────────────
 async function loadRelated(query, artist) {
   try {
-    const url = `${BACKEND}/related?q=${encodeURIComponent(query)}&artist=${encodeURIComponent(artist || '')}`;
+    const url  = `${BACKEND}/related?q=${encodeURIComponent(query)}&artist=${encodeURIComponent(artist || '')}`;
     const res  = await fetch(url);
     const data = await res.json();
     if (Array.isArray(data) && data.length) {
@@ -322,12 +322,12 @@ function renderRelated(songs) {
   relatedList.innerHTML = songs.slice(0, 8).map((s, i) => `
     <div class="related-item" data-query="${s.query.replace(/"/g,'&quot;')}" style="animation-delay:${i*0.05}s">
       ${s.thumbnail
-        ? `<img class="related-thumb" src="${s.thumbnail}" alt="" loading="lazy">`
+        ? `<img class="related-thumb" src="${s.thumbnail}" alt="" loading="lazy" onerror="this.style.background='var(--surface2)';this.removeAttribute('src')">`
         : `<div class="related-thumb" style="background:var(--surface2)"></div>`
       }
       <div class="related-info">
-        <div class="related-title">${s.title}</div>
-        <div class="related-artist">${s.artist || ''}</div>
+        <div class="related-title">${escapeHtml(s.title)}</div>
+        <div class="related-artist">${escapeHtml(s.artist || '')}</div>
       </div>
     </div>
   `).join('');
@@ -336,39 +336,40 @@ function renderRelated(songs) {
   });
 }
 
-function nextRelated() {
+// FIX: nextRelated sekarang support shuffle random (shuffle=true) atau next berurutan (shuffle=false)
+function nextRelated(shuffle = false) {
   if (!relatedQueue.length) {
     showToast('Belum ada lagu terkait', 'info');
     return;
   }
 
-  // Kalau ada preloaded song, pakai itu langsung
-  if (preloadedQuery && preloadedUrl && preloadedQuery === relatedQueue[0]?.query) {
-    const next = relatedQueue.shift();
+  // Pilih index: random kalau shuffle, pertama kalau next
+  const idx  = shuffle ? Math.floor(Math.random() * relatedQueue.length) : 0;
+  const next = relatedQueue.splice(idx, 1)[0];
+
+  // Kalau ada preloaded song yang match, pakai langsung
+  if (!shuffle && preloadedQuery && preloadedUrl && preloadedQuery === next.query) {
     doSearchWithPreload(next.query, preloadedUrl);
-    preloadedQuery = null;
-    preloadedUrl   = null;
+    preloadedQuery   = null;
+    preloadedUrl     = null;
     preloadAudio.src = '';
   } else {
-    const next = relatedQueue.shift();
     doSearch(next.query);
   }
 }
 
-// Play lagu yang udah di-preload (skip fetch stream URL)
+// Play lagu yang sudah di-preload (skip fetch stream URL)
 async function doSearchWithPreload(q, streamUrl) {
   searchInput.value = q;
   showView('search');
 
-  // Reset state
   audio.pause();
-  audio.src = streamUrl; // langsung pakai URL preloaded
-  retryCount = 0;
+  audio.src      = streamUrl;
+  retryCount     = 0;
   shouldAutoPlay = true;
   preloadedQuery = null;
   preloadedUrl   = null;
 
-  // Coba fetch metadata aja (lebih ringan)
   try {
     const res  = await fetch(`${BACKEND}/search?q=${encodeURIComponent(q)}`);
     const data = await res.json();
@@ -393,29 +394,26 @@ async function doSearchWithPreload(q, streamUrl) {
 }
 
 // ─── Search ────────────────────────────────────────────────────────────────────
-function setSearchLoading(on) {
-  const icon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>`;
-  const spin = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin 0.8s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
-  // inject spin style jika belum ada
-  if (!document.getElementById('spinStyle')) {
-    const s = document.createElement('style');
-    s.id = 'spinStyle';
-    s.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
-    document.head.appendChild(s);
-  }
-}
-
 function updateCardUI(data) {
   thumbWrap.innerHTML = currentThumb
-    ? `<img class="card-thumb" src="${currentThumb}" alt="${currentTitle}" onerror="this.style.display='none'">`
+    ? `<img class="card-thumb" src="${currentThumb}" alt="${escapeHtml(currentTitle)}" onerror="this.style.display='none'">`
     : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13M9 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm12 0c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z"/></svg></div>`;
 
   cardTitle.textContent  = currentTitle;
   cardArtist.textContent = currentArtist;
   cardMeta.textContent   = formatDuration(data.duration);
-  npThumb.src            = currentThumb;
-  npTitle.textContent    = currentTitle;
-  npArtist.textContent   = currentArtist;
+
+  // FIX: set npThumb hanya kalau ada thumbnail (hindari broken img)
+  if (currentThumb) {
+    npThumb.src   = currentThumb;
+    npThumb.style.display = '';
+  } else {
+    npThumb.src   = '';
+    npThumb.style.display = 'none';
+  }
+
+  npTitle.textContent  = currentTitle;
+  npArtist.textContent = currentArtist;
 
   if (sourceBadge) {
     sourceBadge.textContent = data.source === 'youtube' ? '▶ YouTube' : '☁ SoundCloud';
@@ -435,7 +433,7 @@ async function doSearch(q) {
 
   showView('search');
 
-  if (searchController) { searchController.abort(); }
+  if (searchController) searchController.abort();
   searchController = new AbortController();
 
   skeletonEl.classList.remove('hidden');
@@ -447,7 +445,7 @@ async function doSearch(q) {
   audio.pause();
   audio.src = '';
   playBtn.disabled = true;
-  retryCount = 0;
+  retryCount     = 0;
   shouldAutoPlay = true;
   preloadedQuery = null;
   preloadedUrl   = null;
@@ -472,13 +470,11 @@ async function doSearch(q) {
     addHistory(q);
     setupMediaSession();
 
-    // Init NoSleep pas user pertama kali mulai play (butuh gesture)
     initNoSleep();
     await requestWakeLock();
 
     await loadStreamUrl();
 
-    // Load related songs di background
     loadRelated(q, data.artist);
 
   } catch(err) {
@@ -497,23 +493,6 @@ function clearSearch() {
   skeletonEl.classList.add('hidden');
   relatedSection.classList.add('hidden');
   renderHistory();
-}
-
-// ─── Stream URL ────────────────────────────────────────────────────────────────
-async function loadStreamUrl() {
-  const res  = await fetch(`${BACKEND}/get-stream-url/${currentToken}`);
-  const data = await res.json();
-  if (!data.url) throw new Error('Stream URL kosong');
-
-  audio.src = data.url;
-  playBtn.disabled = false;
-
-  if (shouldAutoPlay) {
-    shouldAutoPlay = false;
-    audio.play().catch(e => {
-      if (e.name !== 'AbortError') console.warn('[AutoPlay]', e.message);
-    });
-  }
 }
 
 // ─── Audio error retry ─────────────────────────────────────────────────────────
@@ -535,7 +514,6 @@ audio.addEventListener('error', async () => {
 
 // ─── Player controls ───────────────────────────────────────────────────────────
 function safePlay() {
-  // Resume AudioContext kalau suspended (browser policy)
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   audio.play().catch(e => {
     if (e.name !== 'AbortError') console.warn('[Play]', e.message);
@@ -569,14 +547,14 @@ audio.addEventListener('pause', () => {
 audio.addEventListener('timeupdate', () => {
   if (!audio.duration || isNaN(audio.duration)) return;
   const pct = (audio.currentTime / audio.duration) * 100;
-  progressFill.style.width      = pct + '%';
-  progressThumb.style.left      = pct + '%';
-  npProgressFill.style.width    = pct + '%';
-  timeCurrent.textContent       = formatTime(audio.currentTime);
-  timeDuration.textContent      = formatTime(audio.duration);
-  npTimeCurrent.textContent     = formatTime(audio.currentTime);
-  npTimeDuration.textContent    = formatTime(audio.duration);
-  checkPreloadTrigger();
+  progressFill.style.width   = pct + '%';
+  progressThumb.style.left   = pct + '%';
+  npProgressFill.style.width = pct + '%';
+  timeCurrent.textContent    = formatTime(audio.currentTime);
+  timeDuration.textContent   = formatTime(audio.duration);
+  npTimeCurrent.textContent  = formatTime(audio.currentTime);
+  npTimeDuration.textContent = formatTime(audio.duration);
+  checkPreloadTrigger(); // FIX: function sekarang ada, ga bakal error lagi
 });
 
 audio.addEventListener('ended', () => {
@@ -584,8 +562,7 @@ audio.addEventListener('ended', () => {
   if (isLooping) {
     audio.currentTime = 0; safePlay();
   } else if (relatedQueue.length) {
-    // Auto-next ke related song
-    nextRelated();
+    nextRelated(false); // auto-next berurutan saat lagu habis
   }
 });
 
@@ -608,13 +585,13 @@ npProgressBar.addEventListener('touchmove', e => { e.preventDefault(); seekTo(e.
 
 // ─── Mute, Loop ───────────────────────────────────────────────────────────────
 muteBtn.addEventListener('click', () => {
-  isMuted = !isMuted;
+  isMuted     = !isMuted;
   audio.muted = isMuted;
   muteBtn.classList.toggle('active', isMuted);
 });
 
 function toggleLoop() {
-  isLooping = !isLooping;
+  isLooping  = !isLooping;
   audio.loop = isLooping;
   loopBtn.classList.toggle('active', isLooping);
   npLoopBtn.classList.toggle('active', isLooping);
@@ -624,6 +601,10 @@ loopBtn.addEventListener('click', toggleLoop);
 
 playBtn.addEventListener('click', togglePlay);
 npPlayBtn.addEventListener('click', togglePlay);
+
+// FIX: Shuffle button → random pick; Now playing shuffle button juga random
+shuffleBtn.addEventListener('click', () => nextRelated(true));
+npShuffleBtn.addEventListener('click', () => nextRelated(true));
 
 // ─── Search events ─────────────────────────────────────────────────────────────
 searchInput.addEventListener('keydown', e => {
@@ -643,14 +624,14 @@ searchInput.addEventListener('focus', () => {
 function setupMediaSession() {
   if (!('mediaSession' in navigator)) return;
   navigator.mediaSession.metadata = new MediaMetadata({
-    title:  currentTitle,
-    artist: currentArtist,
-    artwork: currentThumb ? [{ src: currentThumb, sizes: '600x600', type: 'image/jpeg' }] : [],
+    title:   currentTitle,
+    artist:  currentArtist,
+    artwork: currentThumb ? [{ src: currentThumb, sizes: '500x500', type: 'image/jpeg' }] : [],
   });
-  navigator.mediaSession.setActionHandler('play',       () => safePlay());
-  navigator.mediaSession.setActionHandler('pause',      () => audio.pause());
-  navigator.mediaSession.setActionHandler('nexttrack',  () => nextRelated());
-  navigator.mediaSession.setActionHandler('seekto', (d) => {
+  navigator.mediaSession.setActionHandler('play',      () => safePlay());
+  navigator.mediaSession.setActionHandler('pause',     () => audio.pause());
+  navigator.mediaSession.setActionHandler('nexttrack', () => nextRelated(false));
+  navigator.mediaSession.setActionHandler('seekto', d => {
     if (d.seekTime !== undefined) audio.currentTime = d.seekTime;
   });
 }
@@ -663,3 +644,7 @@ function formatTime(s) {
 function formatDuration(ms) {
   return ms ? formatTime(Math.floor(ms / 1000)) : '';
 }
+
+// ─── Init ──────────────────────────────────────────────────────────────────────
+// Load trending saat halaman pertama kali dibuka
+loadTrending();
