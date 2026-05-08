@@ -545,6 +545,20 @@ body::after {
   z-index: 100;
 }
 .now-playing-bar.show { display: flex; }
+
+/* Loading state saat playTrack fetch sedang jalan */
+.now-playing-bar.loading .np-title,
+.now-playing-bar.loading .np-artist {
+  opacity: 0.45;
+}
+.now-playing-bar.loading .np-title::after {
+  content: ' …';
+  animation: ellipsis 1s infinite;
+}
+@keyframes ellipsis {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
 .np-left {
   display: flex; align-items: center; gap: 12px;
   flex: 0 0 240px; min-width: 0;
