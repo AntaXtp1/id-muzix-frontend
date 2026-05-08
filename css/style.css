@@ -17,14 +17,17 @@
 
 /* ─── Reset ──────────────────────────────────────────────────────────────────── */
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  height: 100%;          /* FIX: buat body bisa constrained */
+}
 body {
   background: var(--bg);
   color: var(--text);
   font-family: 'DM Sans', sans-serif;
-  min-height: 100vh;
+  height: 100vh;         /* FIX: fixed height bukan min-height */
   display: flex;
-  overflow: hidden;
+  overflow: hidden;      /* tetap hidden buat cegah horizontal scroll */
 }
 a { text-decoration: none; color: inherit; }
 button { cursor: pointer; border: none; background: none; color: inherit; font-family: inherit; }
@@ -126,7 +129,7 @@ body::after {
 .main {
   margin-left: var(--sidebar-w);
   flex: 1;
-  min-height: 100vh;
+  height: 100vh;         /* FIX: fixed height biar overflow-y: auto aktif */
   padding-bottom: calc(var(--bar-h) + 20px);
   overflow-y: auto;
   position: relative;
