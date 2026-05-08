@@ -202,7 +202,8 @@ async function loadTrending() {
     `).join('');
 
     trendingHeroes.querySelectorAll('.trend-hero').forEach(el => {
-      el.addEventListener('click', () => { doSearch(el.dataset.query); showView('search'); });
+      // FIX Bug2: playTrack langsung, tanpa pindah view
+      el.addEventListener('click', () => playTrack(el.dataset.query));
     });
 
     // 4-20 → list
@@ -222,7 +223,8 @@ async function loadTrending() {
     `).join('');
 
     trendingList.querySelectorAll('.trending-row').forEach(el => {
-      el.addEventListener('click', () => { doSearch(el.dataset.query); showView('search'); });
+      // FIX Bug2: playTrack langsung, tanpa pindah view
+      el.addEventListener('click', () => playTrack(el.dataset.query));
     });
 
   } catch(e) {
@@ -244,25 +246,121 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-// ─── Preload next song ─────────────────────────────────────────────────────────
+// ─── Core: fetch stream URL dan set ke audio element ──────────────────────────
+// FIX Autoplay Bug: TIDAK audio.src='' dulu, langsung replace saat URL siap
+// Ini penting karena audio.src='' bikin browser reset autoplay permission state
 async function loadStreamUrl() {
   const res  = await fetch(`${BACKEND}/get-stream-url/${currentToken}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-  const data = await res.json();
-  // Fleksibel: cek berbagai field yang mungkin dikembalikan
+  const data      = await res.json();
   const streamUrl = data.url || data.audio || data.stream_url || '';
   if (!streamUrl) throw new Error('Stream URL kosong');
 
+  // Set src langsung (tanpa clear dulu) lalu load
   audio.src = streamUrl;
+  audio.load();
   playBtn.disabled = false;
 
   if (shouldAutoPlay) {
     shouldAutoPlay = false;
-    audio.play().catch(e => {
-      if (e.name !== 'AbortError') console.warn('[AutoPlay]', e.message);
-    });
+    // Tunggu canplay biar browser siap, baru play — hindari NotAllowedError
+    const tryPlay = () => {
+      audio.play().catch(e => {
+        if (e.name !== 'AbortError') console.warn('[AutoPlay]', e.message);
+      });
+      audio.removeEventListener('canplay', tryPlay);
+    };
+    // Kalau sudah bisa diplay langsung, langsung play
+    if (audio.readyState >= 2) {
+      audio.play().catch(e => {
+        if (e.name !== 'AbortError') console.warn('[AutoPlay readyState]', e.message);
+      });
+    } else {
+      audio.addEventListener('canplay', tryPlay, { once: true });
+    }
   }
+}
+
+// ─── playTrack: main lagu TANPA pindah view ───────────────────────────────────
+// Dipakai oleh: trending click, related click, next/shuffle
+// Berbeda dari doSearch — tidak showView('search'), tidak stop audio duluan,
+// hanya update now-playing bar sambil lagu sebelumnya masih jalan
+let playTrackController = null;
+
+async function playTrack(q, knownMeta = null) {
+  q = q.trim();
+  if (!q) return;
+
+  // Abort fetch sebelumnya kalau ada (bukan audio, hanya HTTP request)
+  if (playTrackController) playTrackController.abort();
+  playTrackController = new AbortController();
+
+  retryCount     = 0;
+  shouldAutoPlay = true;
+  preloadedQuery = null;
+  preloadedUrl   = null;
+
+  // Kalau ada meta yang sudah diketahui (dari trending cache), update UI dulu
+  // sebelum fetch selesai biar UX lebih snappy
+  if (knownMeta) {
+    currentTitle  = knownMeta.title  || '';
+    currentArtist = knownMeta.artist || '';
+    currentThumb  = knownMeta.thumbnail || '';
+    _updateNowPlayingBar();
+  }
+
+  // Tandai loading di now-playing bar
+  nowPlayingBar.classList.add('show', 'loading');
+
+  try {
+    const res  = await fetch(`${BACKEND}/search?q=${encodeURIComponent(q)}`, {
+      signal: playTrackController.signal,
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'Gagal fetch');
+
+    currentToken  = data.stream_token;
+    currentThumb  = data.thumbnail || '';
+    currentTitle  = data.title;
+    currentArtist = data.artist || '';
+    currentQuery  = q;
+
+    nowPlayingBar.classList.remove('loading');
+
+    // Update now-playing bar + card search kalau lagi di view search
+    _updateNowPlayingBar();
+    updateCardUI(data);
+    addHistory(q);
+    setupMediaSession();
+    initNoSleep();
+    await requestWakeLock();
+
+    // FIX Autoplay: loadStreamUrl tidak audio.src='' — langsung replace
+    await loadStreamUrl();
+
+    loadRelated(q, data.artist);
+
+  } catch(err) {
+    nowPlayingBar.classList.remove('loading');
+    if (err.name === 'AbortError') return;
+    console.error('[playTrack]', err);
+    showToast('Gagal memutar lagu 😞');
+  }
+}
+
+// Update hanya elemen now-playing bar (mini bar bawah)
+function _updateNowPlayingBar() {
+  if (currentThumb) {
+    npThumb.src           = currentThumb;
+    npThumb.style.display = '';
+  } else {
+    npThumb.src           = '';
+    npThumb.style.display = 'none';
+  }
+  npTitle.textContent  = currentTitle;
+  npArtist.textContent = currentArtist;
+  nowPlayingBar.classList.add('show');
 }
 
 // ─── checkPreloadTrigger — preload lagu berikutnya saat 75% berjalan ──────────
@@ -272,7 +370,7 @@ async function checkPreloadTrigger() {
   if (!relatedQueue.length) return;
 
   const pct = audio.currentTime / audio.duration;
-  if (pct < 0.75) return; // mulai preload di 75%
+  if (pct < 0.75) return;
 
   isPreloading = true;
   const nextItem = relatedQueue[0];
@@ -291,7 +389,7 @@ async function checkPreloadTrigger() {
         preloadAudio.src = url;
         preloadedQuery   = nextItem.query;
         preloadedUrl     = url;
-        console.log('[Preload] ✓ berhasil preload:', nextItem.query);
+        console.log('[Preload] ✓', nextItem.query);
       }
     }
   } catch(e) {
@@ -332,68 +430,40 @@ function renderRelated(songs) {
     </div>
   `).join('');
   relatedList.querySelectorAll('.related-item').forEach(el => {
-    el.addEventListener('click', () => doSearch(el.dataset.query));
+    el.addEventListener('click', () => playTrack(el.dataset.query));
   });
 }
 
-// FIX: nextRelated sekarang support shuffle random (shuffle=true) atau next berurutan (shuffle=false)
+// FIX: nextRelated pakai playTrack (tidak stop audio, tidak pindah view)
 function nextRelated(shuffle = false) {
   if (!relatedQueue.length) {
     showToast('Belum ada lagu terkait', 'info');
     return;
   }
-
-  // Pilih index: random kalau shuffle, pertama kalau next
   const idx  = shuffle ? Math.floor(Math.random() * relatedQueue.length) : 0;
   const next = relatedQueue.splice(idx, 1)[0];
 
-  // Kalau ada preloaded song yang match, pakai langsung
   if (!shuffle && preloadedQuery && preloadedUrl && preloadedQuery === next.query) {
-    doSearchWithPreload(next.query, preloadedUrl);
+    // Langsung set preloaded URL, skip fetch
+    audio.src = preloadedUrl;
+    audio.load();
+    shouldAutoPlay = true;
+    const tryPlay = () => {
+      audio.play().catch(() => {});
+      audio.removeEventListener('canplay', tryPlay);
+    };
+    audio.readyState >= 2 ? audio.play().catch(() => {}) : audio.addEventListener('canplay', tryPlay, { once: true });
     preloadedQuery   = null;
     preloadedUrl     = null;
     preloadAudio.src = '';
+    // Fetch meta di background untuk update UI
+    playTrack(next.query);
   } else {
-    doSearch(next.query);
+    playTrack(next.query, next); // kirim knownMeta biar UI update duluan
   }
 }
 
-// Play lagu yang sudah di-preload (skip fetch stream URL)
-async function doSearchWithPreload(q, streamUrl) {
-  searchInput.value = q;
-  showView('search');
-
-  audio.pause();
-  audio.src      = streamUrl;
-  retryCount     = 0;
-  shouldAutoPlay = true;
-  preloadedQuery = null;
-  preloadedUrl   = null;
-
-  try {
-    const res  = await fetch(`${BACKEND}/search?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    if (!data.error) {
-      currentTitle  = data.title;
-      currentArtist = data.artist || '';
-      currentThumb  = data.thumbnail || '';
-      currentQuery  = q;
-      currentToken  = data.stream_token;
-
-      updateCardUI(data);
-      addHistory(q);
-      setupMediaSession();
-      loadRelated(q, data.artist);
-    }
-  } catch(e) {
-    console.warn('[SearchWithPreload] meta gagal:', e.message);
-  }
-
-  playBtn.disabled = false;
-  audio.play().catch(() => {});
-}
-
-// ─── Search ────────────────────────────────────────────────────────────────────
+// ─── Search (untuk search bar manual) ─────────────────────────────────────────
 function updateCardUI(data) {
   thumbWrap.innerHTML = currentThumb
     ? `<img class="card-thumb" src="${currentThumb}" alt="${escapeHtml(currentTitle)}" onerror="this.style.display='none'">`
@@ -426,12 +496,21 @@ function updateCardUI(data) {
   }
 }
 
+// doSearch: dipakai HANYA untuk search bar manual
+// Perbedaan dari playTrack:
+//   - showView('search') untuk tampilkan hasil
+//   - update searchInput
+//   - TIDAK stop audio yang sedang jalan (Bug4 fix)
 async function doSearch(q) {
   q = (q || searchInput.value).trim();
   if (!q) return;
   searchInput.value = q;
 
   showView('search');
+
+  // FIX Bug4: TIDAK audio.pause() / audio.src = '' di sini
+  // Audio yang sedang jalan tetap jalan selama ngetik/search
+  // Lagu baru akan play otomatis setelah stream URL siap via loadStreamUrl
 
   if (searchController) searchController.abort();
   searchController = new AbortController();
@@ -442,9 +521,6 @@ async function doSearch(q) {
   relatedSection.classList.add('hidden');
   if (historySection) historySection.style.display = 'none';
 
-  audio.pause();
-  audio.src = '';
-  playBtn.disabled = true;
   retryCount     = 0;
   shouldAutoPlay = true;
   preloadedQuery = null;
@@ -469,10 +545,10 @@ async function doSearch(q) {
     updateCardUI(data);
     addHistory(q);
     setupMediaSession();
-
     initNoSleep();
     await requestWakeLock();
 
+    // FIX Autoplay: loadStreamUrl handle play — audio lama otomatis tergantikan
     await loadStreamUrl();
 
     loadRelated(q, data.artist);
@@ -608,16 +684,31 @@ npShuffleBtn.addEventListener('click', () => nextRelated(true));
 
 // ─── Search events ─────────────────────────────────────────────────────────────
 searchInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') { clearTimeout(debounceTimer); doSearch(); }
+  if (e.key === 'Enter') {
+    clearTimeout(debounceTimer);
+    doSearch();
+  }
 });
+
+// FIX Bug4: input event TIDAK auto-trigger doSearch
+// Cukup tampilkan view search (biar user lihat history/chip) tanpa stop lagu
 searchInput.addEventListener('input', () => {
   clearTimeout(debounceTimer);
+  showView('search'); // tampilkan halaman search saat ngetik
   const q = searchInput.value.trim();
-  if (q.length < 2) return;
-  debounceTimer = setTimeout(() => doSearch(q), 500);
+  if (!q) {
+    renderHistory();
+    resultCard.classList.add('hidden');
+    skeletonEl.classList.add('hidden');
+    errorMsg.classList.add('hidden');
+  }
+  // Hapus debounce auto-search — lagu tidak stop saat ngetik
+  // User harus tekan Enter atau klik chip history untuk trigger search
 });
+
 searchInput.addEventListener('focus', () => {
   showView('search');
+  renderHistory();
 });
 
 // ─── MediaSession ──────────────────────────────────────────────────────────────
