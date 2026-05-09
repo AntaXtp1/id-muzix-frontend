@@ -12,7 +12,7 @@
   --muted2:    rgba(240,240,248,0.18);
   --radius:    14px;
   --sidebar-w: 220px;
-  --bar-h:     80px;
+  --bar-h:     80px;  /* desktop */
 }
 
 /* ─── Reset ──────────────────────────────────────────────────────────────────── */
@@ -533,75 +533,34 @@ body::after {
 .related-artist { font-size: 11px; color: var(--muted); }
 
 /* ─── Now Playing Bar ─────────────────────────────────────────────────────── */
+/* ─── Now Playing Bar ────────────────────────────────────────────────────────── */
 .now-playing-bar {
   position: fixed; bottom: 0; left: 0; right: 0;
-  height: var(--bar-h);
-  background: rgba(10,10,18,0.92);
+  background: rgba(10,10,18,0.95);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-top: 1px solid var(--border);
-  display: none; align-items: center;
-  padding: 0 24px; gap: 20px;
+  display: none;
+  flex-direction: column;       /* 2 baris */
   z-index: 100;
 }
 .now-playing-bar.show { display: flex; }
 
-/* Loading state saat playTrack fetch sedang jalan */
+/* Loading state */
 .now-playing-bar.loading .np-title,
-.now-playing-bar.loading .np-artist {
-  opacity: 0.45;
-}
+.now-playing-bar.loading .np-artist { opacity: 0.45; }
 .now-playing-bar.loading .np-title::after {
-  content: ' …';
-  animation: ellipsis 1s infinite;
+  content: ' …'; animation: ellipsis 1s infinite;
 }
 @keyframes ellipsis {
-  0%,100% { opacity: 1; }
-  50%      { opacity: 0.3; }
+  0%,100% { opacity: 1; } 50% { opacity: 0.3; }
 }
-.np-left {
-  display: flex; align-items: center; gap: 12px;
-  flex: 0 0 240px; min-width: 0;
-}
-.np-thumb {
-  width: 44px; height: 44px; border-radius: 8px;
-  object-fit: cover; background: var(--surface2); flex-shrink: 0;
-}
-.np-info { min-width: 0; }
-.np-title {
-  font-size: 13px; font-weight: 500;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.np-artist { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
-.np-center {
-  flex: 1; display: flex; align-items: center;
-  justify-content: center; gap: 8px;
+/* ── Baris atas: progress bar full width ───────────────────────────────────── */
+.np-top-row {
+  width: 100%;
+  padding: 8px 16px 0;
 }
-.np-ctrl {
-  color: var(--muted); padding: 8px; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  transition: color 0.2s; cursor: pointer;
-}
-.np-ctrl svg { width: 18px; height: 18px; }
-.np-ctrl:hover { color: var(--text); }
-.np-ctrl.active { color: var(--accent); }
-.np-play-btn {
-  width: 40px; height: 40px;
-  background: var(--accent); border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  color: #080810; cursor: pointer;
-  transition: transform 0.15s;
-}
-.np-play-btn:hover { transform: scale(0.93); }
-.np-play-btn svg { width: 18px; height: 18px; }
-
-.np-right {
-  flex: 0 0 240px; min-width: 0;
-  display: flex; align-items: center; gap: 12px;
-  justify-content: flex-end;
-}
-.np-progress-wrap { flex: 1; }
 .np-progress-bar {
   width: 100%; height: 3px;
   background: var(--surface2); border-radius: 99px;
@@ -614,7 +573,58 @@ body::after {
 }
 .np-times {
   display: flex; justify-content: space-between;
-  font-size: 10px; color: var(--muted); margin-top: 4px;
+  font-size: 10px; color: var(--muted); margin-top: 3px;
+}
+
+/* ── Baris bawah: info kiri + controls tengah/kanan ───────────────────────── */
+.np-bottom-row {
+  display: flex; align-items: center;
+  padding: 6px 12px 8px;
+  gap: 8px;
+}
+.np-left {
+  display: flex; align-items: center; gap: 10px;
+  flex: 1; min-width: 0;
+}
+.np-thumb {
+  width: 40px; height: 40px; border-radius: 7px;
+  object-fit: cover; background: var(--surface2); flex-shrink: 0;
+}
+.np-info { min-width: 0; flex: 1; }
+.np-title {
+  font-size: 13px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.np-artist { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+.np-center {
+  display: flex; align-items: center;
+  gap: 2px; flex-shrink: 0;
+}
+.np-ctrl {
+  color: var(--muted); padding: 7px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  transition: color 0.2s; cursor: pointer;
+}
+.np-ctrl svg { width: 18px; height: 18px; }
+.np-ctrl:hover { color: var(--text); }
+.np-ctrl.active { color: var(--accent); }
+.np-ctrl:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.np-play-btn {
+  width: 38px; height: 38px;
+  background: var(--accent); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #080810; cursor: pointer;
+  transition: transform 0.15s; flex-shrink: 0;
+  margin: 0 2px;
+}
+.np-play-btn:hover  { transform: scale(0.93); }
+.np-play-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.np-play-btn svg { width: 16px; height: 16px; }
+
+.np-right {
+  flex-shrink: 0; display: flex; align-items: center;
 }
 .np-anim {
   display: flex; align-items: flex-end; gap: 2px; height: 16px;
@@ -633,6 +643,16 @@ body::after {
   50%       { transform: scaleY(1);   opacity: 1; }
 }
 .now-playing-bar:not(.show) .np-anim { display: none; }
+
+/* Mobile: shuffle hidden, np-right hidden */
+@media (max-width: 768px) {
+  .np-shuffle-hide { display: none; }
+  .np-right        { display: none; }
+  .np-bottom-row   { padding: 4px 10px 10px; }
+  .np-top-row      { padding: 8px 10px 0; }
+  /* bar-h lebih tinggi karena 2-row layout */
+  :root { --bar-h: 90px; }
+}
 
 /* ─── Sidebar overlay (mobile tap-to-close) ──────────────────────────────── */
 .sidebar-overlay {
@@ -698,10 +718,7 @@ body::after {
   .trending-heroes { grid-template-columns: repeat(2,1fr); }
   .result-card { grid-template-columns: 1fr; }
   .card-thumb, .thumb-placeholder { width: 100%; height: auto; aspect-ratio: 1/1; }
-  .np-left { flex: 0 0 160px; }
-  .np-right { display: none; }
 }
 @media (max-width: 480px) {
   .trending-heroes { grid-template-columns: repeat(2,1fr); }
-  .np-left { flex: 0 0 140px; }
 }
