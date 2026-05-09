@@ -108,9 +108,34 @@ function showView(view) {
 }
 
 // ─── Sidebar toggle (mobile) ───────────────────────────────────────────────────
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
+const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  sidebarOverlay.classList.add('show');
+  document.body.style.overflow = 'hidden'; // cegah scroll body saat sidebar buka
 }
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  sidebarOverlay.classList.remove('show');
+  document.body.style.overflow = '';
+}
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.contains('open')
+    ? closeSidebar()
+    : openSidebar();
+}
+
+// Tap overlay = close sidebar
+sidebarOverlay.addEventListener('click', closeSidebar);
+// Swipe kiri juga close (bonus UX mobile)
+let _touchStartX = 0;
+document.getElementById('sidebar').addEventListener('touchstart', e => {
+  _touchStartX = e.touches[0].clientX;
+}, { passive: true });
+document.getElementById('sidebar').addEventListener('touchend', e => {
+  if (e.changedTouches[0].clientX - _touchStartX < -60) closeSidebar();
+}, { passive: true });
 
 // ─── Greeting ─────────────────────────────────────────────────────────────────
 function setGreeting() {
@@ -130,42 +155,71 @@ function showToast(msg, type = 'error') {
   setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
-// ─── History ───────────────────────────────────────────────────────────────────
-function getHistory() {
-  try { return JSON.parse(localStorage.getItem('muzix_history') || '[]'); }
+// ─── History (dua storage terpisah) ───────────────────────────────────────────
+// muzix_search_history : query yang diketik user di search bar (chips search view)
+// muzix_play_history   : lagu yang beneran diputar (sidebar "Diputar Terakhir")
+
+// ── Search history ────────────────────────────────────────────────────────────
+function getSearchHistory() {
+  try { return JSON.parse(localStorage.getItem('muzix_search_history') || '[]'); }
   catch { return []; }
 }
-function addHistory(q) {
-  let h = getHistory().filter(x => x !== q);
+function addSearchHistory(q) {
+  let h = getSearchHistory().filter(x => x !== q);
   h.unshift(q);
-  localStorage.setItem('muzix_history', JSON.stringify(h.slice(0, 8)));
-  renderHistory();
+  localStorage.setItem('muzix_search_history', JSON.stringify(h.slice(0, 8)));
+  renderSearchHistory();
 }
-function renderHistory() {
-  const h = getHistory();
-  if (historySection && historyChips) {
-    if (!h.length) {
-      historySection.style.display = 'none';
-    } else {
-      historySection.style.display = 'block';
-      historyChips.innerHTML = h.map(q =>
-        `<div class="chip" data-query="${q.replace(/"/g,'&quot;')}">🕐 ${q}</div>`
-      ).join('');
-      historyChips.querySelectorAll('.chip').forEach(chip => {
-        chip.addEventListener('click', () => doSearch(chip.dataset.query));
-      });
-    }
-  }
-  if (sidebarHistory) {
-    sidebarHistory.innerHTML = h.slice(0, 6).map(q =>
-      `<div class="sidebar-hist-item" data-query="${q.replace(/"/g,'&quot;')}">${q}</div>`
-    ).join('');
-    sidebarHistory.querySelectorAll('.sidebar-hist-item').forEach(el => {
-      el.addEventListener('click', () => { doSearch(el.dataset.query); showView('search'); });
-    });
-  }
+function renderSearchHistory() {
+  const h = getSearchHistory();
+  if (!historySection || !historyChips) return;
+  if (!h.length) { historySection.style.display = 'none'; return; }
+  historySection.style.display = 'block';
+  historyChips.innerHTML = h.map(q =>
+    `<div class="chip" data-query="${q.replace(/"/g,'&quot;')}">🕐 ${q}</div>`
+  ).join('');
+  historyChips.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => doSearch(chip.dataset.query));
+  });
 }
-renderHistory();
+
+// ── Play history ──────────────────────────────────────────────────────────────
+function getPlayHistory() {
+  try { return JSON.parse(localStorage.getItem('muzix_play_history') || '[]'); }
+  catch { return []; }
+}
+function addPlayHistory(title, artist, query, thumb) {
+  const entry = { title, artist, query, thumb };
+  let h = getPlayHistory().filter(x => x.query !== query);
+  h.unshift(entry);
+  localStorage.setItem('muzix_play_history', JSON.stringify(h.slice(0, 8)));
+  renderPlayHistory();
+}
+function renderPlayHistory() {
+  if (!sidebarHistory) return;
+  const h = getPlayHistory();
+  if (!h.length) {
+    sidebarHistory.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:4px 0">Belum ada lagu</div>';
+    return;
+  }
+  sidebarHistory.innerHTML = h.slice(0, 6).map(item => `
+    <div class="sidebar-hist-item" data-query="${item.query.replace(/"/g,'&quot;')}">
+      ${item.thumb
+        ? `<img class="sidebar-hist-thumb" src="${item.thumb}" alt="" loading="lazy" onerror="this.style.display='none'">`
+        : `<div class="sidebar-hist-thumb-placeholder"></div>`}
+      <div class="sidebar-hist-info">
+        <div class="sidebar-hist-title">${escapeHtml(item.title)}</div>
+        <div class="sidebar-hist-artist">${escapeHtml(item.artist || '')}</div>
+      </div>
+    </div>
+  `).join('');
+  sidebarHistory.querySelectorAll('.sidebar-hist-item').forEach(el => {
+    el.addEventListener('click', () => { playTrack(el.dataset.query); closeSidebar(); });
+  });
+}
+
+renderSearchHistory();
+renderPlayHistory();
 
 // ─── Trending ─────────────────────────────────────────────────────────────────
 async function loadTrending() {
@@ -331,7 +385,8 @@ async function playTrack(q, knownMeta = null) {
     // Update now-playing bar + card search kalau lagi di view search
     _updateNowPlayingBar();
     updateCardUI(data);
-    addHistory(q);
+    // FIX Bug1: playTrack → addPlayHistory (sidebar "Diputar Terakhir")
+    addPlayHistory(currentTitle, currentArtist, q, currentThumb);
     setupMediaSession();
     initNoSleep();
     await requestWakeLock();
@@ -543,7 +598,10 @@ async function doSearch(q) {
     resultCard.classList.remove('hidden');
 
     updateCardUI(data);
-    addHistory(q);
+    // FIX Bug1: doSearch → addSearchHistory (chips di halaman Cari)
+    //           + addPlayHistory (sidebar "Diputar Terakhir") karena lagu juga diputar
+    addSearchHistory(q);
+    addPlayHistory(currentTitle, currentArtist, q, currentThumb);
     setupMediaSession();
     initNoSleep();
     await requestWakeLock();
@@ -558,7 +616,7 @@ async function doSearch(q) {
     console.error('[Search]', err);
     skeletonEl.classList.add('hidden');
     errorMsg.classList.remove('hidden');
-    renderHistory();
+    renderSearchHistory();
   }
 }
 
@@ -568,7 +626,7 @@ function clearSearch() {
   errorMsg.classList.add('hidden');
   skeletonEl.classList.add('hidden');
   relatedSection.classList.add('hidden');
-  renderHistory();
+  renderSearchHistory();
 }
 
 // ─── Audio error retry ─────────────────────────────────────────────────────────
@@ -697,7 +755,7 @@ searchInput.addEventListener('input', () => {
   showView('search'); // tampilkan halaman search saat ngetik
   const q = searchInput.value.trim();
   if (!q) {
-    renderHistory();
+    renderSearchHistory();
     resultCard.classList.add('hidden');
     skeletonEl.classList.add('hidden');
     errorMsg.classList.add('hidden');
@@ -708,7 +766,7 @@ searchInput.addEventListener('input', () => {
 
 searchInput.addEventListener('focus', () => {
   showView('search');
-  renderHistory();
+  renderSearchHistory();
 });
 
 // ─── MediaSession ──────────────────────────────────────────────────────────────
