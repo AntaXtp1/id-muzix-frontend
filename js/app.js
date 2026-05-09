@@ -22,11 +22,15 @@ const downloadBtn    = document.getElementById('downloadBtn');
 const muteBtn        = document.getElementById('muteBtn');
 const loopBtn        = document.getElementById('loopBtn');
 const shuffleBtn     = document.getElementById('shuffleBtn');
+const prevBtn        = document.getElementById('prevBtn');
+const nextBtn        = document.getElementById('nextBtn');
 const nowPlayingBar  = document.getElementById('nowPlayingBar');
 const npThumb        = document.getElementById('npThumb');
 const npTitle        = document.getElementById('npTitle');
 const npArtist       = document.getElementById('npArtist');
 const npPlayBtn      = document.getElementById('npPlayBtn');
+const npPrevBtn      = document.getElementById('npPrevBtn');
+const npNextBtn      = document.getElementById('npNextBtn');
 const npShuffleBtn   = document.getElementById('npShuffleBtn');
 const npLoopBtn      = document.getElementById('npLoopBtn');
 const npProgressFill = document.getElementById('npProgressFill');
@@ -62,6 +66,16 @@ let relatedQueue     = [];
 let preloadedQuery   = null;
 let preloadedUrl     = null;
 let isPreloading     = false;
+
+// ── Session play tracking (anti-loop) ─────────────────────────────────────────
+// sessionPlayed  : array videoId terurut — index 0 = paling baru diputar
+// COOLDOWN_COUNT : lagu yang sama baru boleh muncul lagi setelah N lagu berbeda
+const COOLDOWN_COUNT = 7;
+let sessionPlayed    = [];
+
+// prevStack : history lagu untuk tombol "Sebelumnya"
+// Berisi { query, title, artist, thumb } — max 20 entry
+let prevStack        = [];
 
 // ─── NoSleep / Anti-throttle ───────────────────────────────────────────────────
 let audioCtx   = null;
@@ -382,16 +396,17 @@ async function playTrack(q, knownMeta = null) {
 
     nowPlayingBar.classList.remove('loading');
 
-    // Update now-playing bar + card search kalau lagi di view search
+    // Track prev/session
+    pushToPrevStack(currentQuery, currentTitle, currentArtist, currentThumb);
+    if (data.videoId) markPlayed(data.videoId);
+
     _updateNowPlayingBar();
     updateCardUI(data);
-    // FIX Bug1: playTrack → addPlayHistory (sidebar "Diputar Terakhir")
     addPlayHistory(currentTitle, currentArtist, q, currentThumb);
     setupMediaSession();
     initNoSleep();
     await requestWakeLock();
 
-    // FIX Autoplay: loadStreamUrl tidak audio.src='' — langsung replace
     await loadStreamUrl();
 
     loadRelated(q, data.artist);
@@ -454,15 +469,16 @@ async function checkPreloadTrigger() {
   }
 }
 
-// ─── Auto-next / shuffle by related ───────────────────────────────────────────
+// ─── Auto-next / related queue ────────────────────────────────────────────────
 async function loadRelated(query, artist) {
   try {
     const url  = `${BACKEND}/related?q=${encodeURIComponent(query)}&artist=${encodeURIComponent(artist || '')}`;
     const res  = await fetch(url);
     const data = await res.json();
     if (Array.isArray(data) && data.length) {
-      relatedQueue = data;
-      renderRelated(data);
+      // FIX Bug3: filter cooldown + duplikat sebelum masuk queue
+      relatedQueue = filterRelated(data);
+      renderRelated(relatedQueue);
     }
   } catch(e) {
     console.warn('[Related] gagal:', e.message);
@@ -489,33 +505,117 @@ function renderRelated(songs) {
   });
 }
 
-// FIX: nextRelated pakai playTrack (tidak stop audio, tidak pindah view)
+// ── Track session history untuk prev button ───────────────────────────────────
+function pushToPrevStack(query, title, artist, thumb) {
+  if (!query) return;
+  // Jangan push duplikat berturut-turut
+  if (prevStack.length && prevStack[prevStack.length - 1].query === query) return;
+  prevStack.push({ query, title, artist, thumb });
+  if (prevStack.length > 20) prevStack.shift();
+}
+
+// ── Session played tracker (anti-loop) ───────────────────────────────────────
+function markPlayed(videoId) {
+  if (!videoId) return;
+  sessionPlayed = sessionPlayed.filter(id => id !== videoId);
+  sessionPlayed.unshift(videoId); // paling baru di index 0
+  if (sessionPlayed.length > 30) sessionPlayed.pop();
+}
+
+// Cek apakah videoId masih dalam cooldown (belum boleh muncul lagi)
+function isInCooldown(videoId) {
+  if (!videoId) return false;
+  const idx = sessionPlayed.indexOf(videoId);
+  return idx !== -1 && idx < COOLDOWN_COUNT;
+}
+
+// Normalisasi judul untuk deteksi duplikat: lowercase, hapus feat/remix/ver/etc
+function normalizeTitle(title) {
+  return title.toLowerCase()
+    .replace(/\(.*?\)/g, '')          // hapus tanda kurung dan isinya
+    .replace(/\[.*?\]/g, '')          // hapus bracket
+    .replace(/feat\.?.*$/i, '')       // hapus feat dan seterusnya
+    .replace(/ft\.?.*$/i, '')
+    .replace(/remix|version|ver\.|official|music video|lyric/gi, '')
+    .replace(/[^a-z0-9\s]/g, '')      // hapus karakter non-alfanumerik
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Filter related songs: buang yang masih cooldown atau judul sangat mirip
+function filterRelated(songs) {
+  const seenTitles = new Set();
+  // Tambah judul yang sedang diputar ke seen biar tidak muncul di queue
+  if (currentTitle) seenTitles.add(normalizeTitle(currentTitle));
+
+  return songs.filter(song => {
+    if (!song.videoId || !song.title) return false;
+    if (isInCooldown(song.videoId)) return false;
+
+    const norm = normalizeTitle(song.title);
+    if (seenTitles.has(norm)) return false;
+    seenTitles.add(norm);
+    return true;
+  });
+}
+
+// FIX: nextRelated pakai sessionPlayed cooldown + playTrack (tidak pindah view)
 function nextRelated(shuffle = false) {
-  if (!relatedQueue.length) {
-    showToast('Belum ada lagu terkait', 'info');
+  const available = filterRelated(relatedQueue);
+
+  if (!available.length) {
+    // Queue habis atau semua kena cooldown — coba load ulang related
+    if (currentQuery) {
+      showToast('Memuat lagu berikutnya…', 'info');
+      loadRelated(currentQuery, currentArtist).then(() => {
+        const retry = filterRelated(relatedQueue);
+        if (retry.length) {
+          const pick = retry.splice(shuffle ? Math.floor(Math.random() * retry.length) : 0, 1)[0];
+          relatedQueue = retry;
+          playTrack(pick.query, pick);
+        }
+      });
+    } else {
+      showToast('Belum ada lagu terkait', 'info');
+    }
     return;
   }
-  const idx  = shuffle ? Math.floor(Math.random() * relatedQueue.length) : 0;
-  const next = relatedQueue.splice(idx, 1)[0];
+
+  const idx  = shuffle ? Math.floor(Math.random() * available.length) : 0;
+  const next = available[idx];
+
+  // Update relatedQueue: hapus item yang dipilih dari queue original
+  const queueIdx = relatedQueue.findIndex(s => s.videoId === next.videoId || s.query === next.query);
+  if (queueIdx !== -1) relatedQueue.splice(queueIdx, 1);
 
   if (!shuffle && preloadedQuery && preloadedUrl && preloadedQuery === next.query) {
-    // Langsung set preloaded URL, skip fetch
     audio.src = preloadedUrl;
     audio.load();
     shouldAutoPlay = true;
-    const tryPlay = () => {
-      audio.play().catch(() => {});
-      audio.removeEventListener('canplay', tryPlay);
-    };
-    audio.readyState >= 2 ? audio.play().catch(() => {}) : audio.addEventListener('canplay', tryPlay, { once: true });
+    const tryPlay = () => { audio.play().catch(() => {}); };
+    audio.readyState >= 2 ? tryPlay() : audio.addEventListener('canplay', tryPlay, { once: true });
     preloadedQuery   = null;
     preloadedUrl     = null;
     preloadAudio.src = '';
-    // Fetch meta di background untuk update UI
-    playTrack(next.query);
-  } else {
-    playTrack(next.query, next); // kirim knownMeta biar UI update duluan
   }
+  playTrack(next.query, next);
+}
+
+// Prev: kembali ke lagu sebelumnya dari prevStack
+function prevTrack() {
+  // Hapus lagu yang sedang diputar dari stack dulu
+  if (prevStack.length && prevStack[prevStack.length - 1].query === currentQuery) {
+    prevStack.pop();
+  }
+  if (!prevStack.length) {
+    showToast('Ini lagu pertama', 'info');
+    // Restart lagu saat ini
+    audio.currentTime = 0;
+    safePlay();
+    return;
+  }
+  const prev = prevStack.pop();
+  playTrack(prev.query, prev);
 }
 
 // ─── Search (untuk search bar manual) ─────────────────────────────────────────
@@ -736,6 +836,12 @@ loopBtn.addEventListener('click', toggleLoop);
 playBtn.addEventListener('click', togglePlay);
 npPlayBtn.addEventListener('click', togglePlay);
 
+prevBtn.addEventListener('click', prevTrack);
+npPrevBtn.addEventListener('click', prevTrack);
+
+nextBtn.addEventListener('click', () => nextRelated(false));
+npNextBtn.addEventListener('click', () => nextRelated(false));
+
 // FIX: Shuffle button → random pick; Now playing shuffle button juga random
 shuffleBtn.addEventListener('click', () => nextRelated(true));
 npShuffleBtn.addEventListener('click', () => nextRelated(true));
@@ -777,9 +883,10 @@ function setupMediaSession() {
     artist:  currentArtist,
     artwork: currentThumb ? [{ src: currentThumb, sizes: '500x500', type: 'image/jpeg' }] : [],
   });
-  navigator.mediaSession.setActionHandler('play',      () => safePlay());
-  navigator.mediaSession.setActionHandler('pause',     () => audio.pause());
-  navigator.mediaSession.setActionHandler('nexttrack', () => nextRelated(false));
+  navigator.mediaSession.setActionHandler('play',          () => safePlay());
+  navigator.mediaSession.setActionHandler('pause',         () => audio.pause());
+  navigator.mediaSession.setActionHandler('previoustrack', () => prevTrack());
+  navigator.mediaSession.setActionHandler('nexttrack',     () => nextRelated(false));
   navigator.mediaSession.setActionHandler('seekto', d => {
     if (d.seekTime !== undefined) audio.currentTime = d.seekTime;
   });
