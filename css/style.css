@@ -634,6 +634,43 @@ body::after {
 }
 .now-playing-bar:not(.show) .np-anim { display: none; }
 
+/* ─── Sidebar overlay (mobile tap-to-close) ──────────────────────────────── */
+.sidebar-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 49; /* di bawah sidebar (z:50) */
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.sidebar-overlay.show { display: block; }
+
+/* ─── Sidebar play history items ─────────────────────────────────────────── */
+.sidebar-hist-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 4px; border-radius: 6px;
+  cursor: pointer; transition: background 0.15s;
+}
+.sidebar-hist-item:hover { background: var(--surface2); }
+.sidebar-hist-thumb {
+  width: 36px; height: 36px; border-radius: 6px;
+  object-fit: cover; flex-shrink: 0;
+  background: var(--surface2);
+}
+.sidebar-hist-thumb-placeholder {
+  width: 36px; height: 36px; border-radius: 6px;
+  background: var(--surface2); flex-shrink: 0;
+}
+.sidebar-hist-info { min-width: 0; }
+.sidebar-hist-title {
+  font-size: 12px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sidebar-hist-artist {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* ─── Toast ──────────────────────────────────────────────────────────────── */
 .toast {
   position: fixed; bottom: calc(var(--bar-h) + 12px); left: 50%;
