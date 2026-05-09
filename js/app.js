@@ -351,19 +351,46 @@ async function loadStreamUrl() {
 }
 
 // ─── playTrack: main lagu TANPA pindah view ───────────────────────────────────
-// Dipakai oleh: trending click, related click, next/shuffle
-// Berbeda dari doSearch — tidak showView('search'), tidak stop audio duluan,
-// hanya update now-playing bar sambil lagu sebelumnya masih jalan
 let playTrackController = null;
+let isChangingTrack     = false;  // FIX 429: guard biar ga bisa spam request
+let _trackDebounceTimer = null;   // FIX 429: debounce 800ms untuk next/prev/shuffle
+
+// Wrapper debounce untuk tombol next/prev/shuffle
+function debouncedPlayTrack(q, knownMeta = null) {
+  clearTimeout(_trackDebounceTimer);
+  _trackDebounceTimer = setTimeout(() => playTrack(q, knownMeta), 800);
+}
+
+function _setChangingTrack(val) {
+  isChangingTrack = val;
+  // Disable/enable semua tombol navigasi lagu saat loading
+  [prevBtn, nextBtn, shuffleBtn, npPrevBtn, npNextBtn, npShuffleBtn].forEach(btn => {
+    if (btn) btn.disabled = val;
+  });
+  if (val) {
+    playBtn.disabled  = true;
+    npPlayBtn.disabled = true;
+  } else {
+    // Balikin setelah stream siap (loadStreamUrl yang handle playBtn)
+  }
+}
 
 async function playTrack(q, knownMeta = null) {
   q = q.trim();
   if (!q) return;
 
-  // Abort fetch sebelumnya kalau ada (bukan audio, hanya HTTP request)
+  // FIX 429: kalau masih loading track sebelumnya, skip — jangan spawn request baru
+  // Kecuali ini request yang sama persis (retry)
+  if (isChangingTrack && q !== currentQuery) {
+    console.log('[playTrack] blocked — sedang loading, skip:', q);
+    return;
+  }
+
+  // Abort HTTP request sebelumnya
   if (playTrackController) playTrackController.abort();
   playTrackController = new AbortController();
 
+  _setChangingTrack(true);
   retryCount     = 0;
   shouldAutoPlay = true;
   preloadedQuery = null;
@@ -408,10 +435,12 @@ async function playTrack(q, knownMeta = null) {
     await requestWakeLock();
 
     await loadStreamUrl();
+    _setChangingTrack(false);
 
     loadRelated(q, data.artist);
 
   } catch(err) {
+    _setChangingTrack(false);
     nowPlayingBar.classList.remove('loading');
     if (err.name === 'AbortError') return;
     console.error('[playTrack]', err);
@@ -559,12 +588,12 @@ function filterRelated(songs) {
   });
 }
 
-// FIX: nextRelated pakai sessionPlayed cooldown + playTrack (tidak pindah view)
+// FIX 429: nextRelated pakai debouncedPlayTrack biar ga bisa spam
 function nextRelated(shuffle = false) {
+  if (isChangingTrack) return; // block kalau masih loading
   const available = filterRelated(relatedQueue);
 
   if (!available.length) {
-    // Queue habis atau semua kena cooldown — coba load ulang related
     if (currentQuery) {
       showToast('Memuat lagu berikutnya…', 'info');
       loadRelated(currentQuery, currentArtist).then(() => {
@@ -572,7 +601,7 @@ function nextRelated(shuffle = false) {
         if (retry.length) {
           const pick = retry.splice(shuffle ? Math.floor(Math.random() * retry.length) : 0, 1)[0];
           relatedQueue = retry;
-          playTrack(pick.query, pick);
+          debouncedPlayTrack(pick.query, pick);
         }
       });
     } else {
@@ -584,7 +613,6 @@ function nextRelated(shuffle = false) {
   const idx  = shuffle ? Math.floor(Math.random() * available.length) : 0;
   const next = available[idx];
 
-  // Update relatedQueue: hapus item yang dipilih dari queue original
   const queueIdx = relatedQueue.findIndex(s => s.videoId === next.videoId || s.query === next.query);
   if (queueIdx !== -1) relatedQueue.splice(queueIdx, 1);
 
@@ -598,24 +626,23 @@ function nextRelated(shuffle = false) {
     preloadedUrl     = null;
     preloadAudio.src = '';
   }
-  playTrack(next.query, next);
+  debouncedPlayTrack(next.query, next);
 }
 
-// Prev: kembali ke lagu sebelumnya dari prevStack
+// FIX 429: prevTrack pakai debouncedPlayTrack
 function prevTrack() {
-  // Hapus lagu yang sedang diputar dari stack dulu
+  if (isChangingTrack) return;
   if (prevStack.length && prevStack[prevStack.length - 1].query === currentQuery) {
     prevStack.pop();
   }
   if (!prevStack.length) {
     showToast('Ini lagu pertama', 'info');
-    // Restart lagu saat ini
     audio.currentTime = 0;
     safePlay();
     return;
   }
   const prev = prevStack.pop();
-  playTrack(prev.query, prev);
+  debouncedPlayTrack(prev.query, prev);
 }
 
 // ─── Search (untuk search bar manual) ─────────────────────────────────────────
