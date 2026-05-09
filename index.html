@@ -197,55 +197,64 @@
 
 <!-- Now Playing Bar -->
 <div class="now-playing-bar" id="nowPlayingBar">
-  <div class="np-left">
-    <img class="np-thumb" id="npThumb" src="" alt="" />
-    <div class="np-info">
-      <div class="np-title" id="npTitle">—</div>
-      <div class="np-artist" id="npArtist">—</div>
+
+  <!-- Baris atas: progress bar full width (visible di semua ukuran layar) -->
+  <div class="np-top-row">
+    <div class="np-progress-bar" id="npProgressBar">
+      <div class="np-progress-fill" id="npProgressFill"></div>
+    </div>
+    <div class="np-times">
+      <span id="npTimeCurrent">0:00</span>
+      <span id="npTimeDuration">0:00</span>
     </div>
   </div>
 
-  <div class="np-center">
-    <button class="np-ctrl" id="npShuffleBtn" title="Shuffle">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
-      </svg>
-    </button>
-    <button class="np-ctrl" id="npPrevBtn" title="Sebelumnya">
-      <svg viewBox="0 0 24 24" fill="currentColor">
-        <polygon points="19 20 9 12 19 4 19 20"/><rect x="5" y="4" width="2" height="16"/>
-      </svg>
-    </button>
-    <button class="np-play-btn" id="npPlayBtn">
-      <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-    </button>
-    <button class="np-ctrl" id="npNextBtn" title="Selanjutnya">
-      <svg viewBox="0 0 24 24" fill="currentColor">
-        <polygon points="5 4 15 12 5 20 5 4"/><rect x="17" y="4" width="2" height="16"/>
-      </svg>
-    </button>
-    <button class="np-ctrl" id="npLoopBtn" onclick="toggleLoopNp()" title="Loop">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-        <path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-      </svg>
-    </button>
+  <!-- Baris bawah: info + controls -->
+  <div class="np-bottom-row">
+    <div class="np-left">
+      <img class="np-thumb" id="npThumb" src="" alt="" />
+      <div class="np-info">
+        <div class="np-title" id="npTitle">—</div>
+        <div class="np-artist" id="npArtist">—</div>
+      </div>
+    </div>
+
+    <div class="np-center">
+      <!-- Shuffle: hidden di mobile, visible di desktop -->
+      <button class="np-ctrl np-shuffle-hide" id="npShuffleBtn" title="Shuffle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+        </svg>
+      </button>
+      <button class="np-ctrl" id="npPrevBtn" title="Sebelumnya">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="19 20 9 12 19 4 19 20"/><rect x="5" y="4" width="2" height="16"/>
+        </svg>
+      </button>
+      <button class="np-play-btn" id="npPlayBtn">
+        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </button>
+      <button class="np-ctrl" id="npNextBtn" title="Selanjutnya">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 4 15 12 5 20 5 4"/><rect x="17" y="4" width="2" height="16"/>
+        </svg>
+      </button>
+      <button class="np-ctrl" id="npLoopBtn" onclick="toggleLoopNp()" title="Loop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Desktop only: animated bars -->
+    <div class="np-right">
+      <div class="np-anim">
+        <span></span><span></span><span></span><span></span>
+      </div>
+    </div>
   </div>
 
-  <div class="np-right">
-    <div class="np-progress-wrap">
-      <div class="np-progress-bar" id="npProgressBar">
-        <div class="np-progress-fill" id="npProgressFill"></div>
-      </div>
-      <div class="np-times">
-        <span id="npTimeCurrent">0:00</span>
-        <span id="npTimeDuration">0:00</span>
-      </div>
-    </div>
-    <div class="np-anim">
-      <span></span><span></span><span></span><span></span>
-    </div>
-  </div>
 </div>
 
 <div class="toast" id="toastEl"></div>
