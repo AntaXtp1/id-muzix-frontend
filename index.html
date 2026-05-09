@@ -143,9 +143,22 @@
           </div>
 
           <div class="controls">
-            <button class="ctrl-btn" id="shuffleBtn" title="Shuffle / Next Related" >
+            <button class="ctrl-btn" id="shuffleBtn" title="Shuffle">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                 <path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+              </svg>
+            </button>
+            <button class="ctrl-btn" id="prevBtn" title="Lagu Sebelumnya">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="19 20 9 12 19 4 19 20"/><rect x="5" y="4" width="2" height="16"/>
+              </svg>
+            </button>
+            <button class="play-btn" id="playBtn" disabled>
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+            <button class="ctrl-btn" id="nextBtn" title="Lagu Selanjutnya">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 4 15 12 5 20 5 4"/><rect x="17" y="4" width="2" height="16"/>
               </svg>
             </button>
             <button class="ctrl-btn" id="muteBtn" title="Mute">
@@ -153,9 +166,6 @@
                 <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
                 <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
               </svg>
-            </button>
-            <button class="play-btn" id="playBtn" disabled>
-              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             </button>
             <button class="ctrl-btn" id="loopBtn" title="Loop">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -196,13 +206,23 @@
   </div>
 
   <div class="np-center">
-    <button class="np-ctrl" id="npShuffleBtn"  title="Next Related">
+    <button class="np-ctrl" id="npShuffleBtn" title="Shuffle">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
       </svg>
     </button>
+    <button class="np-ctrl" id="npPrevBtn" title="Sebelumnya">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <polygon points="19 20 9 12 19 4 19 20"/><rect x="5" y="4" width="2" height="16"/>
+      </svg>
+    </button>
     <button class="np-play-btn" id="npPlayBtn">
       <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+    </button>
+    <button class="np-ctrl" id="npNextBtn" title="Selanjutnya">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <polygon points="5 4 15 12 5 20 5 4"/><rect x="17" y="4" width="2" height="16"/>
+      </svg>
     </button>
     <button class="np-ctrl" id="npLoopBtn" onclick="toggleLoopNp()" title="Loop">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
