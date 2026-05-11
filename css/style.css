@@ -722,3 +722,48 @@ body::after {
 @media (max-width: 480px) {
   .trending-heroes { grid-template-columns: repeat(2,1fr); }
 }
+
+/* ─── PWA Install Banner ────────────────────────────────────────────────────── */
+#pwaInstallBanner {
+  position: fixed;
+  bottom: calc(var(--bar-h) + 12px);
+  left: 12px; right: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex; align-items: center; gap: 12px;
+  z-index: 200;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  animation: slideUp 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.pwa-banner-icon { font-size: 32px; flex-shrink: 0; }
+.pwa-banner-info { flex: 1; min-width: 0; }
+.pwa-banner-title { font-size: 13px; font-weight: 600; }
+.pwa-banner-sub   { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.pwa-banner-btn {
+  background: var(--accent); color: #080810;
+  border: none; border-radius: 20px;
+  padding: 7px 16px; font-size: 12px; font-weight: 700;
+  cursor: pointer; flex-shrink: 0; white-space: nowrap;
+}
+.pwa-banner-close {
+  background: none; border: none; color: var(--muted);
+  font-size: 16px; cursor: pointer; padding: 4px;
+  flex-shrink: 0; line-height: 1;
+}
+.pwa-banner-close:hover { color: var(--text); }
+
+/* iOS safe area support (notch/home indicator) */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .now-playing-bar {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  #pwaInstallBanner {
+    bottom: calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px);
+  }
+}
