@@ -929,5 +929,92 @@ function formatDuration(ms) {
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
-// Load trending saat halaman pertama kali dibuka
 loadTrending();
+
+// Handle shortcut URL params (?view=search, ?view=trending)
+(function handleStartUrl() {
+  const params = new URLSearchParams(location.search);
+  const view   = params.get('view');
+  if (view === 'search' || view === 'trending') showView(view);
+})();
+
+// ─── PWA: Service Worker Registration ─────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then(reg => {
+        console.log('[SW] Registered, scope:', reg.scope);
+
+        // Cek update SW saat app dibuka ulang
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showToast('Update tersedia — refresh untuk versi terbaru', 'info');
+            }
+          });
+        });
+      })
+      .catch(err => console.warn('[SW] Registrasi gagal:', err));
+  });
+}
+
+// ─── PWA: Install Prompt (Add to Home Screen banner) ──────────────────────────
+let _installPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _installPrompt = e;
+
+  // Tampilkan banner install setelah user berinteraksi (delay 3 detik)
+  setTimeout(() => {
+    if (!_installPrompt) return;
+    // Cek apakah user sudah pernah dismiss/install
+    if (localStorage.getItem('pwa_install_dismissed')) return;
+    showInstallBanner();
+  }, 3000);
+});
+
+function showInstallBanner() {
+  // Jangan tampilkan kalau sudah ada banner
+  if (document.getElementById('pwaInstallBanner')) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'pwaInstallBanner';
+  banner.innerHTML = `
+    <div class="pwa-banner-icon">🎵</div>
+    <div class="pwa-banner-info">
+      <div class="pwa-banner-title">Install Id Muzix</div>
+      <div class="pwa-banner-sub">Akses cepat dari homescreen</div>
+    </div>
+    <button class="pwa-banner-btn" id="pwaInstallBtn">Install</button>
+    <button class="pwa-banner-close" id="pwaInstallClose">✕</button>
+  `;
+  document.body.appendChild(banner);
+
+  document.getElementById('pwaInstallBtn').addEventListener('click', async () => {
+    if (!_installPrompt) return;
+    _installPrompt.prompt();
+    const { outcome } = await _installPrompt.userChoice;
+    console.log('[PWA] Install outcome:', outcome);
+    _installPrompt = null;
+    banner.remove();
+    if (outcome === 'dismissed') {
+      localStorage.setItem('pwa_install_dismissed', '1');
+    }
+  });
+
+  document.getElementById('pwaInstallClose').addEventListener('click', () => {
+    banner.remove();
+    localStorage.setItem('pwa_install_dismissed', '1');
+  });
+}
+
+// Kalau sudah terinstall sebagai PWA, sembunyikan prompt selamanya
+window.addEventListener('appinstalled', () => {
+  _installPrompt = null;
+  document.getElementById('pwaInstallBanner')?.remove();
+  localStorage.setItem('pwa_install_dismissed', '1');
+  showToast('Id Muzix berhasil diinstall! 🎉', 'info');
+});
+
